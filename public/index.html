@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Visibility Checker</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    .header { text-align: center; padding: 48px 20px 32px; }
+    .header h1 { font-size: 2.2rem; font-weight: 700; background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+    .header p { color: #94a3b8; font-size: 1.05rem; }
+
+    .search-box { max-width: 700px; margin: 0 auto 48px; padding: 0 20px; }
+    .search-form { display: flex; gap: 10px; flex-wrap: wrap; }
+    .search-form input, .search-form select { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 18px; color: #e2e8f0; font-size: 1rem; outline: none; transition: border-color 0.2s; }
+    .search-form input:focus, .search-form select:focus { border-color: #60a5fa; }
+    .search-form input { flex: 1; min-width: 200px; }
+    .search-form select { min-width: 180px; }
+    .search-form button { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; border-radius: 10px; padding: 14px 28px; color: white; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .search-form button:hover { opacity: 0.9; }
+    .search-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .results { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; display: none; }
+
+    .section { background: #1e293b; border-radius: 16px; padding: 28px; margin-bottom: 24px; border: 1px solid #334155; }
+    .section h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+    .section h2 .icon { font-size: 1.5rem; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 10px 12px; color: #94a3b8; font-weight: 500; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #334155; }
+    td { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 0.95rem; }
+    tr:last-child td { border-bottom: none; }
+    .rank { font-weight: 700; color: #60a5fa; min-width: 40px; }
+    .keyword-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .volume { color: #a78bfa; font-weight: 500; }
+
+    .status-card { background: #0f172a; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #334155; }
+    .status-card .platform-name { font-size: 0.9rem; color: #94a3b8; margin-bottom: 8px; }
+    .status-card .status { font-size: 1.6rem; font-weight: 700; }
+    .status-card .status.visible { color: #34d399; }
+    .status-card .status.not-visible { color: #f87171; }
+    .status-card .detail { font-size: 0.85rem; color: #64748b; margin-top: 6px; }
+
+    .ai-platforms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 768px) { .ai-platforms { grid-template-columns: repeat(2, 1fr); } }
+
+    .prompt-list { list-style: none; }
+    .prompt-list li { padding: 12px 16px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #334155; }
+    .prompt-list li .prompt-text { flex: 1; margin-right: 12px; }
+    .prompt-list li .prompt-vol { color: #a78bfa; font-weight: 500; font-size: 0.9rem; white-space: nowrap; }
+
+    .loading { display: none; text-align: center; padding: 60px 20px; }
+    .loading.active { display: block; }
+    .spinner { width: 48px; height: 48px; border: 4px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p { color: #94a3b8; }
+
+    .metric-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #334155; }
+    .metric-row:last-child { border-bottom: none; }
+    .metric-label { color: #94a3b8; }
+    .metric-value { font-weight: 600; color: #e2e8f0; }
+
+    .empty-state { text-align: center; padding: 30px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AI Visibility Checker</h1>
+    <p>See how your domain ranks in Google, AI Overviews, ChatGPT, Gemini, and Perplexity</p>
+  </div>
+
+  <div class="search-box">
+    <form class="search-form" id="searchForm">
+      <input type="text" id="domain" placeholder="Enter domain (e.g. topclick.co.za)" required>
+      <select id="country">
+        <option value="United States">United States</option>
+        <option value="United Kingdom">United Kingdom</option>
+        <option value="Canada">Canada</option>
+        <option value="Australia">Australia</option>
+        <option value="South Africa">South Africa</option>
+        <option value="Germany">Germany</option>
+        <option value="France">France</option>
+        <option value="India">India</option>
+        <option value="Brazil">Brazil</option>
+        <option value="Netherlands">Netherlands</option>
+        <option value="Spain">Spain</option>
+        <option value="Italy">Italy</option>
+        <option value="Mexico">Mexico</option>
+        <option value="Japan">Japan</option>
+        <option value="New Zealand">New Zealand</option>
+        <option value="Ireland">Ireland</option>
+        <option value="Singapore">Singapore</option>
+        <option value="United Arab Emirates">United Arab Emirates</option>
+        <option value="Israel">Israel</option>
+        <option value="Nigeria">Nigeria</option>
+        <option value="Kenya">Kenya</option>
+        <option value="Ghana">Ghana</option>
+      </select>
+      <button type="submit" id="submitBtn">Analyze</button>
+    </form>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p id="loadingText">Analyzing domain visibility...</p>
+  </div>
+
+  <div class="results" id="results">
+    <!-- Top 10 Keywords -->
+    <div class="section">
+      <h2><span class="icon">&#128270;</span> Top 10 Organic Keywords</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th><th>URL</th></tr>
+          </thead>
+          <tbody id="keywordsTable"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="keywordsEmpty" style="display:none;">No organic keyword rankings found.</div>
+    </div>
+
+    <!-- AI Platform Visibility -->
+    <div class="section">
+      <h2><span class="icon">&#129302;</span> AI Platform Visibility</h2>
+      <div class="ai-platforms" id="aiPlatforms">
+        <div class="status-card" id="cardAIO">
+          <div class="platform-name">Google AI Overviews</div>
+          <div class="status" id="statusAIO">--</div>
+          <div class="detail" id="detailAIO"></div>
+        </div>
+        <div class="status-card" id="cardGemini">
+          <div class="platform-name">Gemini (Google)</div>
+          <div class="status" id="statusGemini">--</div>
+          <div class="detail" id="detailGemini"></div>
+        </div>
+        <div class="status-card" id="cardChatGPT">
+          <div class="platform-name">ChatGPT</div>
+          <div class="status" id="statusChatGPT">--</div>
+          <div class="detail" id="detailChatGPT"></div>
+        </div>
+        <div class="status-card" id="cardPerplexity">
+          <div class="platform-name">Perplexity</div>
+          <div class="status" id="statusPerplexity">--</div>
+          <div class="detail" id="detailPerplexity"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ChatGPT & Gemini Details -->
+    <div class="grid-2">
+      <div class="section">
+        <h2><span class="icon">&#128172;</span> ChatGPT - Top Prompts</h2>
+        <ul class="prompt-list" id="chatgptPrompts"></ul>
+        <div class="empty-state" id="chatgptEmpty" style="display:none;">Not found in ChatGPT responses.</div>
+      </div>
+      <div class="section">
+        <h2><span class="icon">&#10024;</span> Gemini - Top Prompts</h2>
+        <ul class="prompt-list" id="geminiPrompts"></ul>
+        <div class="empty-state" id="geminiEmpty" style="display:none;">Not found in Gemini responses.</div>
+      </div>
+    </div>
+
+    <!-- AI Overview Keywords -->
+    <div class="section">
+      <h2><span class="icon">&#127760;</span> Google AI Overview Keywords</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th></tr>
+          </thead>
+          <tbody id="aioTable"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="aioEmpty" style="display:none;">Not appearing in any AI Overviews.</div>
+    </div>
+
+    <!-- Perplexity Response -->
+    <div class="section">
+      <h2><span class="icon">&#128218;</span> Perplexity Response</h2>
+      <div id="perplexityResponse" style="line-height:1.7; color:#cbd5e1;"></div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('searchForm');
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = document.getElementById('domain').value.trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+      const country = document.getElementById('country').value;
+      const btn = document.getElementById('submitBtn');
+
+      btn.disabled = true;
+      btn.textContent = 'Analyzing...';
+      results.style.display = 'none';
+      loading.classList.add('active');
+
+      try {
+        const body = { domain, country, language: 'en' };
+
+        // Fire all requests in parallel
+        const [ranked, aio, chatgptMentions, geminiMentions, chatgptAgg, geminiAgg, perplexity] = await Promise.allSettled([
+          post('/api/ranked-keywords', body),
+          post('/api/ai-overview-keywords', body),
+          post('/api/llm-mentions-chatgpt', body),
+          post('/api/llm-mentions-google', body),
+          post('/api/llm-aggregate-chatgpt', body),
+          post('/api/llm-aggregate-google', body),
+          post('/api/perplexity-check', body),
+        ]);
+
+        // Render top 10 keywords
+        renderKeywords(ranked);
+
+        // Render AI Overview keywords
+        renderAIOKeywords(aio);
+
+        // Render ChatGPT prompts
+        renderPrompts('chatgpt', chatgptMentions);
+
+        // Render Gemini prompts
+        renderPrompts('gemini', geminiMentions);
+
+        // Render AI platform cards
+        renderAIOCard(aio);
+        renderChatGPTCard(chatgptAgg, chatgptMentions);
+        renderGeminiCard(geminiAgg, geminiMentions);
+        renderPerplexityCard(perplexity, domain);
+
+        // Render Perplexity response
+        renderPerplexityResponse(perplexity);
+
+        results.style.display = 'block';
+      } catch (err) {
+        alert('Error analyzing domain: ' + err.message);
+      } finally {
+        loading.classList.remove('active');
+        btn.disabled = false;
+        btn.textContent = 'Analyze';
+      }
+    });
+
+    async function post(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    }
+
+    function getItems(result) {
+      if (result.status !== 'fulfilled') return [];
+      const data = result.value;
+      try {
+        return data?.tasks?.[0]?.result?.[0]?.items || [];
+      } catch { return []; }
+    }
+
+    function getTotalCount(result) {
+      if (result.status !== 'fulfilled') return 0;
+      try {
+        return result.value?.tasks?.[0]?.result?.[0]?.total_count || 0;
+      } catch { return 0; }
+    }
+
+    function renderKeywords(result) {
+      const tbody = document.getElementById('keywordsTable');
+      const empty = document.getElementById('keywordsEmpty');
+      const items = getItems(result);
+      tbody.innerHTML = '';
+
+      if (!items.length) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+
+      items.forEach((item, i) => {
+        const kw = item.keyword_data?.keyword || '--';
+        const pos = item.ranked_serp_element?.serp_item?.rank_group || '--';
+        const vol = item.keyword_data?.keyword_info?.search_volume || 0;
+        const url = item.ranked_serp_element?.serp_item?.relative_url || item.ranked_serp_element?.serp_item?.url || '--';
+        const shortUrl = url.length > 50 ? url.substring(0, 47) + '...' : url;
+        tbody.innerHTML += `<tr>
+          <td class="rank">${i + 1}</td>
+          <td class="keyword-cell" title="${esc(kw)}">${esc(kw)}</td>
+          <td class="rank">${pos}</td>
+          <td class="volume">${vol.toLocaleString()}</td>
+          <td title="${esc(url)}" style="color:#64748b; font-size:0.85rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(shortUrl)}</td>
+        </tr>`;
+      });
+    }
+
+    function renderAIOKeywords(result) {
+      const tbody = document.getElementById('aioTable');
+      const empty = document.getElementById('aioEmpty');
+      const items = getItems(result);
+      tbody.innerHTML = '';
+
+      if (!items.length) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+
+      items.forEach((item, i) => {
+        const kw = item.keyword_data?.keyword || '--';
+        const pos = item.ranked_serp_element?.serp_item?.rank_group || '--';
+        const vol = item.keyword_data?.keyword_info?.search_volume || 0;
+        tbody.innerHTML += `<tr>
+          <td class="rank">${i + 1}</td>
+          <td class="keyword-cell" title="${esc(kw)}">${esc(kw)}</td>
+          <td class="rank">${pos}</td>
+          <td class="volume">${vol.toLocaleString()}</td>
+        </tr>`;
+      });
+    }
+
+    function renderPrompts(platform, result) {
+      const list = document.getElementById(`${platform}Prompts`);
+      const empty = document.getElementById(`${platform}Empty`);
+      const items = getItems(result);
+      list.innerHTML = '';
+
+      if (!items.length) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+
+      items.forEach(item => {
+        const kw = item.keyword || '--';
+        const vol = item.ai_search_volume || 0;
+        list.innerHTML += `<li>
+          <span class="prompt-text">${esc(kw)}</span>
+          <span class="prompt-vol">${vol.toLocaleString()} AI vol</span>
+        </li>`;
+      });
+    }
+
+    function renderAIOCard(result) {
+      const status = document.getElementById('statusAIO');
+      const detail = document.getElementById('detailAIO');
+      const count = getTotalCount(result);
+
+      if (count > 0) {
+        status.textContent = 'Visible';
+        status.className = 'status visible';
+        detail.textContent = `Appearing in ${count} AI Overview${count > 1 ? 's' : ''}`;
+      } else {
+        status.textContent = 'Not Found';
+        status.className = 'status not-visible';
+        detail.textContent = 'No AI Overview appearances';
+      }
+    }
+
+    function renderChatGPTCard(aggResult, mentionsResult) {
+      const status = document.getElementById('statusChatGPT');
+      const detail = document.getElementById('detailChatGPT');
+      const items = getItems(mentionsResult);
+      let totalMentions = 0;
+
+      if (aggResult.status === 'fulfilled') {
+        try {
+          const metrics = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0];
+          totalMentions = metrics?.total_count || items.length;
+        } catch { totalMentions = items.length; }
+      } else {
+        totalMentions = items.length;
+      }
+
+      if (totalMentions > 0 || items.length > 0) {
+        status.textContent = 'Visible';
+        status.className = 'status visible';
+        detail.textContent = `${totalMentions} prompt${totalMentions !== 1 ? 's' : ''} mention this domain`;
+      } else {
+        status.textContent = 'Not Found';
+        status.className = 'status not-visible';
+        detail.textContent = 'No ChatGPT mentions found';
+      }
+    }
+
+    function renderGeminiCard(aggResult, mentionsResult) {
+      const status = document.getElementById('statusGemini');
+      const detail = document.getElementById('detailGemini');
+      const items = getItems(mentionsResult);
+      let totalMentions = 0;
+
+      if (aggResult.status === 'fulfilled') {
+        try {
+          const metrics = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0];
+          totalMentions = metrics?.total_count || items.length;
+        } catch { totalMentions = items.length; }
+      } else {
+        totalMentions = items.length;
+      }
+
+      if (totalMentions > 0 || items.length > 0) {
+        status.textContent = 'Visible';
+        status.className = 'status visible';
+        detail.textContent = `${totalMentions} prompt${totalMentions !== 1 ? 's' : ''} mention this domain`;
+      } else {
+        status.textContent = 'Not Found';
+        status.className = 'status not-visible';
+        detail.textContent = 'No Gemini mentions found';
+      }
+    }
+
+    function renderPerplexityCard(result, domain) {
+      const status = document.getElementById('statusPerplexity');
+      const detail = document.getElementById('detailPerplexity');
+
+      if (result.status !== 'fulfilled') {
+        status.textContent = 'Error';
+        status.className = 'status not-visible';
+        detail.textContent = 'Could not check';
+        return;
+      }
+
+      try {
+        const resp = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
+        const text = resp?.response_text || resp?.text || '';
+        const mentioned = text.toLowerCase().includes(domain.toLowerCase());
+
+        if (mentioned) {
+          status.textContent = 'Visible';
+          status.className = 'status visible';
+          detail.textContent = 'Domain mentioned in response';
+        } else {
+          status.textContent = 'Not Found';
+          status.className = 'status not-visible';
+          detail.textContent = 'Domain not in response';
+        }
+      } catch {
+        status.textContent = 'Unknown';
+        status.className = 'status not-visible';
+        detail.textContent = 'Could not parse response';
+      }
+    }
+
+    function renderPerplexityResponse(result) {
+      const container = document.getElementById('perplexityResponse');
+      if (result.status !== 'fulfilled') {
+        container.innerHTML = '<div class="empty-state">Could not retrieve Perplexity response.</div>';
+        return;
+      }
+      try {
+        const resp = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
+        const text = resp?.response_text || resp?.text || 'No response received.';
+        container.innerHTML = `<div style="background:#0f172a; padding:20px; border-radius:10px; border:1px solid #334155; white-space:pre-wrap;">${esc(text)}</div>`;
+      } catch {
+        container.innerHTML = '<div class="empty-state">Could not parse Perplexity response.</div>';
+      }
+    }
+
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
