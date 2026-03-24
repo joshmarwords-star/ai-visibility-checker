@@ -205,37 +205,25 @@
 
       try {
         const body = { domain, country, language: 'en' };
+        const data = await post('/api/analyze', body);
 
-        // Fire all requests in parallel
-        const [ranked, aio, chatgptMentions, geminiMentions, chatgptAgg, geminiAgg, perplexity] = await Promise.allSettled([
-          post('/api/ranked-keywords', body),
-          post('/api/ai-overview-keywords', body),
-          post('/api/llm-mentions-chatgpt', body),
-          post('/api/llm-mentions-google', body),
-          post('/api/llm-aggregate-chatgpt', body),
-          post('/api/llm-aggregate-google', body),
-          post('/api/perplexity-check', body),
-        ]);
+        const wrap = (d) => ({ status: 'fulfilled', value: d });
+        const ranked = wrap(data.ranked);
+        const aio = wrap(data.aio);
+        const chatgptMentions = wrap(data.chatgptMentions);
+        const geminiMentions = wrap(data.geminiMentions);
+        const chatgptAgg = wrap(data.chatgptAgg);
+        const geminiAgg = wrap(data.geminiAgg);
+        const perplexity = wrap(data.perplexity);
 
-        // Render top 10 keywords
         renderKeywords(ranked);
-
-        // Render AI Overview keywords
         renderAIOKeywords(aio);
-
-        // Render ChatGPT prompts
         renderPrompts('chatgpt', chatgptMentions);
-
-        // Render Gemini prompts
         renderPrompts('gemini', geminiMentions);
-
-        // Render AI platform cards
         renderAIOCard(aio);
         renderChatGPTCard(chatgptAgg, chatgptMentions);
         renderGeminiCard(geminiAgg, geminiMentions);
         renderPerplexityCard(perplexity, domain);
-
-        // Render Perplexity response
         renderPerplexityResponse(perplexity);
 
         results.style.display = 'block';
