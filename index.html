@@ -163,16 +163,28 @@
 
   <script>
     const AUTH = 'aW5mb0B0b3BjbGljay5jby56YTpiZjViYzJmMWE5YThiM2E5';
-    const PROXY = 'https://corsproxy.io/?url=';
+    const PROXIES = [
+      'https://corsproxy.io/?url=',
+      'https://api.allorigins.win/raw?url=',
+      'https://cors.sh/',
+    ];
 
     async function dfs(endpoint, body) {
-      const url = PROXY + encodeURIComponent('https://api.dataforseo.com/v3/' + endpoint);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Authorization': 'Basic ' + AUTH, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return res.json();
+      const apiUrl = 'https://api.dataforseo.com/v3/' + endpoint;
+      // Try direct first, then proxies
+      const attempts = [apiUrl, ...PROXIES.map(p => p + encodeURIComponent(apiUrl))];
+      let lastErr;
+      for (const url of attempts) {
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': 'Basic ' + AUTH, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (res.ok) { return res.json(); }
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr || new Error('All API attempts failed');
     }
 
     const form = document.getElementById('searchForm');
@@ -238,7 +250,7 @@
         renderLLMResponses(chatgptLive, geminiLive, perplexity);
         results.style.display = 'block';
       } catch (err) {
-        errorMsg.textContent = 'Error: ' + err.message;
+        errorMsg.innerHTML = 'Error: ' + err.message + '<br><small>If all results show "Not Found", the API requests may be blocked by your browser. Try opening browser console (Cmd+Option+J) for details.</small>';
         errorMsg.style.display = 'block';
       } finally {
         loading.classList.remove('active');
