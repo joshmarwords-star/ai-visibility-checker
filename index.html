@@ -197,7 +197,7 @@
         const [ranked, aio, chatgptMentions, geminiMentions, chatgptAgg, geminiAgg, perplexity] = await Promise.allSettled([
           dfs('dataforseo_labs/google/ranked_keywords/live', [{
             target: domain, location_name: country, language_code: lang, limit: 10,
-            order_by: ['ranked_serp_element.serp_item.rank_group,asc'],
+            order_by: ['keyword_data.keyword_info.search_volume,desc'],
             filters: [['ranked_serp_element.serp_item.type', '=', 'organic']],
           }]),
           dfs('dataforseo_labs/google/ranked_keywords/live', [{
@@ -206,21 +206,21 @@
             order_by: ['keyword_data.keyword_info.search_volume,desc'],
           }]),
           dfs('content_analysis/ai_optimization/llm_mentions/search/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
             platform: 'chat_gpt', location_name: country, language_code: lang, limit: 10,
             order_by: ['ai_search_volume,desc'],
           }]),
           dfs('content_analysis/ai_optimization/llm_mentions/search/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
             platform: 'google', location_name: country, language_code: lang, limit: 10,
             order_by: ['ai_search_volume,desc'],
           }]),
           dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
             platform: 'chat_gpt', location_name: country, language_code: lang,
           }]),
           dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
             platform: 'google', location_name: country, language_code: lang,
           }]),
           dfs('content_analysis/ai_optimization/llm_response/live', [{
