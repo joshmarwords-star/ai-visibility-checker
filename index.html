@@ -60,12 +60,9 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .loading p { color: #94a3b8; }
 
-    .metric-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #334155; }
-    .metric-row:last-child { border-bottom: none; }
-    .metric-label { color: #94a3b8; }
-    .metric-value { font-weight: 600; color: #e2e8f0; }
-
     .empty-state { text-align: center; padding: 30px; color: #64748b; }
+
+    .error-msg { background: #7f1d1d; border: 1px solid #991b1b; border-radius: 10px; padding: 16px; margin: 20px auto; max-width: 700px; text-align: center; color: #fca5a5; display: none; }
   </style>
 </head>
 <body>
@@ -105,54 +102,35 @@
     </form>
   </div>
 
+  <div class="error-msg" id="errorMsg"></div>
+
   <div class="loading" id="loading">
     <div class="spinner"></div>
     <p id="loadingText">Analyzing domain visibility...</p>
   </div>
 
   <div class="results" id="results">
-    <!-- Top 10 Keywords -->
     <div class="section">
       <h2><span class="icon">&#128270;</span> Top 10 Organic Keywords</h2>
       <div style="overflow-x:auto;">
         <table>
-          <thead>
-            <tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th><th>URL</th></tr>
-          </thead>
+          <thead><tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th><th>URL</th></tr></thead>
           <tbody id="keywordsTable"></tbody>
         </table>
       </div>
       <div class="empty-state" id="keywordsEmpty" style="display:none;">No organic keyword rankings found.</div>
     </div>
 
-    <!-- AI Platform Visibility -->
     <div class="section">
       <h2><span class="icon">&#129302;</span> AI Platform Visibility</h2>
-      <div class="ai-platforms" id="aiPlatforms">
-        <div class="status-card" id="cardAIO">
-          <div class="platform-name">Google AI Overviews</div>
-          <div class="status" id="statusAIO">--</div>
-          <div class="detail" id="detailAIO"></div>
-        </div>
-        <div class="status-card" id="cardGemini">
-          <div class="platform-name">Gemini (Google)</div>
-          <div class="status" id="statusGemini">--</div>
-          <div class="detail" id="detailGemini"></div>
-        </div>
-        <div class="status-card" id="cardChatGPT">
-          <div class="platform-name">ChatGPT</div>
-          <div class="status" id="statusChatGPT">--</div>
-          <div class="detail" id="detailChatGPT"></div>
-        </div>
-        <div class="status-card" id="cardPerplexity">
-          <div class="platform-name">Perplexity</div>
-          <div class="status" id="statusPerplexity">--</div>
-          <div class="detail" id="detailPerplexity"></div>
-        </div>
+      <div class="ai-platforms">
+        <div class="status-card"><div class="platform-name">Google AI Overviews</div><div class="status" id="statusAIO">--</div><div class="detail" id="detailAIO"></div></div>
+        <div class="status-card"><div class="platform-name">Gemini (Google)</div><div class="status" id="statusGemini">--</div><div class="detail" id="detailGemini"></div></div>
+        <div class="status-card"><div class="platform-name">ChatGPT</div><div class="status" id="statusChatGPT">--</div><div class="detail" id="detailChatGPT"></div></div>
+        <div class="status-card"><div class="platform-name">Perplexity</div><div class="status" id="statusPerplexity">--</div><div class="detail" id="detailPerplexity"></div></div>
       </div>
     </div>
 
-    <!-- ChatGPT & Gemini Details -->
     <div class="grid-2">
       <div class="section">
         <h2><span class="icon">&#128172;</span> ChatGPT - Top Prompts</h2>
@@ -166,21 +144,17 @@
       </div>
     </div>
 
-    <!-- AI Overview Keywords -->
     <div class="section">
       <h2><span class="icon">&#127760;</span> Google AI Overview Keywords</h2>
       <div style="overflow-x:auto;">
         <table>
-          <thead>
-            <tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th></tr>
-          </thead>
+          <thead><tr><th>#</th><th>Keyword</th><th>Position</th><th>Search Volume</th></tr></thead>
           <tbody id="aioTable"></tbody>
         </table>
       </div>
       <div class="empty-state" id="aioEmpty" style="display:none;">Not appearing in any AI Overviews.</div>
     </div>
 
-    <!-- Perplexity Response -->
     <div class="section">
       <h2><span class="icon">&#128218;</span> Perplexity Response</h2>
       <div id="perplexityResponse" style="line-height:1.7; color:#cbd5e1;"></div>
@@ -188,9 +162,23 @@
   </div>
 
   <script>
+    const AUTH = 'aW5mb0B0b3BjbGljay5jby56YTpiZjViYzJmMWE5YThiM2E5';
+    const PROXY = 'https://corsproxy.io/?url=';
+
+    async function dfs(endpoint, body) {
+      const url = PROXY + encodeURIComponent('https://api.dataforseo.com/v3/' + endpoint);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': 'Basic ' + AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    }
+
     const form = document.getElementById('searchForm');
     const loading = document.getElementById('loading');
     const results = document.getElementById('results');
+    const errorMsg = document.getElementById('errorMsg');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -201,20 +189,46 @@
       btn.disabled = true;
       btn.textContent = 'Analyzing...';
       results.style.display = 'none';
+      errorMsg.style.display = 'none';
       loading.classList.add('active');
 
       try {
-        const body = { domain, country, language: 'en' };
-        const data = await post('/api/analyze', body);
-
-        const wrap = (d) => ({ status: 'fulfilled', value: d });
-        const ranked = wrap(data.ranked);
-        const aio = wrap(data.aio);
-        const chatgptMentions = wrap(data.chatgptMentions);
-        const geminiMentions = wrap(data.geminiMentions);
-        const chatgptAgg = wrap(data.chatgptAgg);
-        const geminiAgg = wrap(data.geminiAgg);
-        const perplexity = wrap(data.perplexity);
+        const lang = 'en';
+        const [ranked, aio, chatgptMentions, geminiMentions, chatgptAgg, geminiAgg, perplexity] = await Promise.allSettled([
+          dfs('dataforseo_labs/google/ranked_keywords/live', [{
+            target: domain, location_name: country, language_code: lang, limit: 10,
+            order_by: ['ranked_serp_element.serp_item.rank_group,asc'],
+            filters: [['ranked_serp_element.serp_item.type', '=', 'organic']],
+          }]),
+          dfs('dataforseo_labs/google/ranked_keywords/live', [{
+            target: domain, location_name: country, language_code: lang, limit: 10,
+            item_types: ['ai_overview_reference'],
+            order_by: ['keyword_data.keyword_info.search_volume,desc'],
+          }]),
+          dfs('content_analysis/ai_optimization/llm_mentions/search/live', [{
+            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            platform: 'chat_gpt', location_name: country, language_code: lang, limit: 10,
+            order_by: ['ai_search_volume,desc'],
+          }]),
+          dfs('content_analysis/ai_optimization/llm_mentions/search/live', [{
+            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            platform: 'google', location_name: country, language_code: lang, limit: 10,
+            order_by: ['ai_search_volume,desc'],
+          }]),
+          dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
+            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            platform: 'chat_gpt', location_name: country, language_code: lang,
+          }]),
+          dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
+            target: [{ domain, search_filter: 'include', search_scope: ['answer'] }],
+            platform: 'google', location_name: country, language_code: lang,
+          }]),
+          dfs('content_analysis/ai_optimization/llm_response/live', [{
+            llm_type: 'perplexity', model_name: 'sonar',
+            user_prompt: 'What is ' + domain + ' and what services or products do they offer? Include their website URL in your answer.',
+            web_search: true,
+          }]),
+        ]);
 
         renderKeywords(ranked);
         renderAIOKeywords(aio);
@@ -225,10 +239,10 @@
         renderGeminiCard(geminiAgg, geminiMentions);
         renderPerplexityCard(perplexity, domain);
         renderPerplexityResponse(perplexity);
-
         results.style.display = 'block';
       } catch (err) {
-        alert('Error analyzing domain: ' + err.message);
+        errorMsg.textContent = 'Error: ' + err.message;
+        errorMsg.style.display = 'block';
       } finally {
         loading.classList.remove('active');
         btn.disabled = false;
@@ -236,55 +250,30 @@
       }
     });
 
-    async function post(url, body) {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return res.json();
+    function getItems(r) {
+      if (r.status !== 'fulfilled') return [];
+      try { return r.value?.tasks?.[0]?.result?.[0]?.items || []; } catch { return []; }
     }
-
-    function getItems(result) {
-      if (result.status !== 'fulfilled') return [];
-      const data = result.value;
-      try {
-        return data?.tasks?.[0]?.result?.[0]?.items || [];
-      } catch { return []; }
+    function getTotalCount(r) {
+      if (r.status !== 'fulfilled') return 0;
+      try { return r.value?.tasks?.[0]?.result?.[0]?.total_count || 0; } catch { return 0; }
     }
-
-    function getTotalCount(result) {
-      if (result.status !== 'fulfilled') return 0;
-      try {
-        return result.value?.tasks?.[0]?.result?.[0]?.total_count || 0;
-      } catch { return 0; }
-    }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
     function renderKeywords(result) {
       const tbody = document.getElementById('keywordsTable');
       const empty = document.getElementById('keywordsEmpty');
       const items = getItems(result);
       tbody.innerHTML = '';
-
-      if (!items.length) {
-        empty.style.display = 'block';
-        return;
-      }
+      if (!items.length) { empty.style.display = 'block'; return; }
       empty.style.display = 'none';
-
       items.forEach((item, i) => {
         const kw = item.keyword_data?.keyword || '--';
         const pos = item.ranked_serp_element?.serp_item?.rank_group || '--';
         const vol = item.keyword_data?.keyword_info?.search_volume || 0;
         const url = item.ranked_serp_element?.serp_item?.relative_url || item.ranked_serp_element?.serp_item?.url || '--';
         const shortUrl = url.length > 50 ? url.substring(0, 47) + '...' : url;
-        tbody.innerHTML += `<tr>
-          <td class="rank">${i + 1}</td>
-          <td class="keyword-cell" title="${esc(kw)}">${esc(kw)}</td>
-          <td class="rank">${pos}</td>
-          <td class="volume">${vol.toLocaleString()}</td>
-          <td title="${esc(url)}" style="color:#64748b; font-size:0.85rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(shortUrl)}</td>
-        </tr>`;
+        tbody.innerHTML += '<tr><td class="rank">' + (i+1) + '</td><td class="keyword-cell" title="' + esc(kw) + '">' + esc(kw) + '</td><td class="rank">' + pos + '</td><td class="volume">' + vol.toLocaleString() + '</td><td style="color:#64748b;font-size:0.85rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(url) + '">' + esc(shortUrl) + '</td></tr>';
       });
     }
 
@@ -293,167 +282,77 @@
       const empty = document.getElementById('aioEmpty');
       const items = getItems(result);
       tbody.innerHTML = '';
-
-      if (!items.length) {
-        empty.style.display = 'block';
-        return;
-      }
+      if (!items.length) { empty.style.display = 'block'; return; }
       empty.style.display = 'none';
-
       items.forEach((item, i) => {
         const kw = item.keyword_data?.keyword || '--';
         const pos = item.ranked_serp_element?.serp_item?.rank_group || '--';
         const vol = item.keyword_data?.keyword_info?.search_volume || 0;
-        tbody.innerHTML += `<tr>
-          <td class="rank">${i + 1}</td>
-          <td class="keyword-cell" title="${esc(kw)}">${esc(kw)}</td>
-          <td class="rank">${pos}</td>
-          <td class="volume">${vol.toLocaleString()}</td>
-        </tr>`;
+        tbody.innerHTML += '<tr><td class="rank">' + (i+1) + '</td><td class="keyword-cell" title="' + esc(kw) + '">' + esc(kw) + '</td><td class="rank">' + pos + '</td><td class="volume">' + vol.toLocaleString() + '</td></tr>';
       });
     }
 
     function renderPrompts(platform, result) {
-      const list = document.getElementById(`${platform}Prompts`);
-      const empty = document.getElementById(`${platform}Empty`);
+      const list = document.getElementById(platform + 'Prompts');
+      const empty = document.getElementById(platform + 'Empty');
       const items = getItems(result);
       list.innerHTML = '';
-
-      if (!items.length) {
-        empty.style.display = 'block';
-        return;
-      }
+      if (!items.length) { empty.style.display = 'block'; return; }
       empty.style.display = 'none';
-
       items.forEach(item => {
         const kw = item.keyword || '--';
         const vol = item.ai_search_volume || 0;
-        list.innerHTML += `<li>
-          <span class="prompt-text">${esc(kw)}</span>
-          <span class="prompt-vol">${vol.toLocaleString()} AI vol</span>
-        </li>`;
+        list.innerHTML += '<li><span class="prompt-text">' + esc(kw) + '</span><span class="prompt-vol">' + vol.toLocaleString() + ' AI vol</span></li>';
       });
     }
 
     function renderAIOCard(result) {
-      const status = document.getElementById('statusAIO');
-      const detail = document.getElementById('detailAIO');
+      const s = document.getElementById('statusAIO');
+      const d = document.getElementById('detailAIO');
       const count = getTotalCount(result);
-
-      if (count > 0) {
-        status.textContent = 'Visible';
-        status.className = 'status visible';
-        detail.textContent = `Appearing in ${count} AI Overview${count > 1 ? 's' : ''}`;
-      } else {
-        status.textContent = 'Not Found';
-        status.className = 'status not-visible';
-        detail.textContent = 'No AI Overview appearances';
-      }
+      if (count > 0) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = 'Appearing in ' + count + ' AI Overview' + (count > 1 ? 's' : ''); }
+      else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No AI Overview appearances'; }
     }
 
     function renderChatGPTCard(aggResult, mentionsResult) {
-      const status = document.getElementById('statusChatGPT');
-      const detail = document.getElementById('detailChatGPT');
+      const s = document.getElementById('statusChatGPT');
+      const d = document.getElementById('detailChatGPT');
       const items = getItems(mentionsResult);
-      let totalMentions = 0;
-
-      if (aggResult.status === 'fulfilled') {
-        try {
-          const metrics = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0];
-          totalMentions = metrics?.total_count || items.length;
-        } catch { totalMentions = items.length; }
-      } else {
-        totalMentions = items.length;
-      }
-
-      if (totalMentions > 0 || items.length > 0) {
-        status.textContent = 'Visible';
-        status.className = 'status visible';
-        detail.textContent = `${totalMentions} prompt${totalMentions !== 1 ? 's' : ''} mention this domain`;
-      } else {
-        status.textContent = 'Not Found';
-        status.className = 'status not-visible';
-        detail.textContent = 'No ChatGPT mentions found';
-      }
+      let total = items.length;
+      try { total = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.total_count || total; } catch {}
+      if (total > 0) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = total + ' prompt' + (total !== 1 ? 's' : '') + ' mention this domain'; }
+      else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No ChatGPT mentions found'; }
     }
 
     function renderGeminiCard(aggResult, mentionsResult) {
-      const status = document.getElementById('statusGemini');
-      const detail = document.getElementById('detailGemini');
+      const s = document.getElementById('statusGemini');
+      const d = document.getElementById('detailGemini');
       const items = getItems(mentionsResult);
-      let totalMentions = 0;
-
-      if (aggResult.status === 'fulfilled') {
-        try {
-          const metrics = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0];
-          totalMentions = metrics?.total_count || items.length;
-        } catch { totalMentions = items.length; }
-      } else {
-        totalMentions = items.length;
-      }
-
-      if (totalMentions > 0 || items.length > 0) {
-        status.textContent = 'Visible';
-        status.className = 'status visible';
-        detail.textContent = `${totalMentions} prompt${totalMentions !== 1 ? 's' : ''} mention this domain`;
-      } else {
-        status.textContent = 'Not Found';
-        status.className = 'status not-visible';
-        detail.textContent = 'No Gemini mentions found';
-      }
+      let total = items.length;
+      try { total = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.total_count || total; } catch {}
+      if (total > 0) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = total + ' prompt' + (total !== 1 ? 's' : '') + ' mention this domain'; }
+      else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No Gemini mentions found'; }
     }
 
     function renderPerplexityCard(result, domain) {
-      const status = document.getElementById('statusPerplexity');
-      const detail = document.getElementById('detailPerplexity');
-
-      if (result.status !== 'fulfilled') {
-        status.textContent = 'Error';
-        status.className = 'status not-visible';
-        detail.textContent = 'Could not check';
-        return;
-      }
-
+      const s = document.getElementById('statusPerplexity');
+      const d = document.getElementById('detailPerplexity');
+      if (result.status !== 'fulfilled') { s.textContent = 'Error'; s.className = 'status not-visible'; d.textContent = 'Could not check'; return; }
       try {
         const resp = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
         const text = resp?.response_text || resp?.text || '';
-        const mentioned = text.toLowerCase().includes(domain.toLowerCase());
-
-        if (mentioned) {
-          status.textContent = 'Visible';
-          status.className = 'status visible';
-          detail.textContent = 'Domain mentioned in response';
-        } else {
-          status.textContent = 'Not Found';
-          status.className = 'status not-visible';
-          detail.textContent = 'Domain not in response';
-        }
-      } catch {
-        status.textContent = 'Unknown';
-        status.className = 'status not-visible';
-        detail.textContent = 'Could not parse response';
-      }
+        if (text.toLowerCase().includes(domain.toLowerCase())) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = 'Domain mentioned in response'; }
+        else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'Domain not in response'; }
+      } catch { s.textContent = 'Unknown'; s.className = 'status not-visible'; d.textContent = 'Could not parse response'; }
     }
 
     function renderPerplexityResponse(result) {
-      const container = document.getElementById('perplexityResponse');
-      if (result.status !== 'fulfilled') {
-        container.innerHTML = '<div class="empty-state">Could not retrieve Perplexity response.</div>';
-        return;
-      }
+      const c = document.getElementById('perplexityResponse');
+      if (result.status !== 'fulfilled') { c.innerHTML = '<div class="empty-state">Could not retrieve Perplexity response.</div>'; return; }
       try {
-        const resp = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
-        const text = resp?.response_text || resp?.text || 'No response received.';
-        container.innerHTML = `<div style="background:#0f172a; padding:20px; border-radius:10px; border:1px solid #334155; white-space:pre-wrap;">${esc(text)}</div>`;
-      } catch {
-        container.innerHTML = '<div class="empty-state">Could not parse Perplexity response.</div>';
-      }
-    }
-
-    function esc(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
+        const text = result.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.response_text || result.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.text || 'No response received.';
+        c.innerHTML = '<div style="background:#0f172a;padding:20px;border-radius:10px;border:1px solid #334155;white-space:pre-wrap;">' + esc(text) + '</div>';
+      } catch { c.innerHTML = '<div class="empty-state">Could not parse Perplexity response.</div>'; }
     }
   </script>
 </body>
