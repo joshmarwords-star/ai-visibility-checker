@@ -156,7 +156,7 @@
     </div>
 
     <div class="section">
-      <h2><span class="icon">&#128218;</span> Perplexity Response</h2>
+      <h2><span class="icon">&#128218;</span> AI Responses</h2>
       <div id="perplexityResponse" style="line-height:1.7; color:#cbd5e1;"></div>
     </div>
   </div>
@@ -194,7 +194,8 @@
 
       try {
         const lang = 'en';
-        const [ranked, aio, chatgptMentions, geminiMentions, chatgptAgg, geminiAgg, perplexity] = await Promise.allSettled([
+        const llmPrompt = 'What is ' + domain + ' and what services or products do they offer? Include their website URL in your answer.';
+        const [ranked, aio, chatgptMentions, geminiMentions, perplexity, chatgptLive, geminiLive] = await Promise.allSettled([
           dfs('dataforseo_labs/google/ranked_keywords/live', [{
             target: domain, location_name: country, language_code: lang, limit: 10,
             order_by: ['keyword_data.keyword_info.search_volume,desc'],
@@ -215,18 +216,14 @@
             platform: 'google', location_name: country, language_code: lang, limit: 10,
             order_by: ['ai_search_volume,desc'],
           }]),
-          dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
-            platform: 'chat_gpt', location_name: country, language_code: lang,
-          }]),
-          dfs('content_analysis/ai_optimization/llm_mentions/aggregate_metrics/live', [{
-            target: [{ domain, search_filter: 'include', search_scope: ['any'] }],
-            platform: 'google', location_name: country, language_code: lang,
+          dfs('content_analysis/ai_optimization/llm_response/live', [{
+            llm_type: 'perplexity', model_name: 'sonar', user_prompt: llmPrompt, web_search: true,
           }]),
           dfs('content_analysis/ai_optimization/llm_response/live', [{
-            llm_type: 'perplexity', model_name: 'sonar',
-            user_prompt: 'What is ' + domain + ' and what services or products do they offer? Include their website URL in your answer.',
-            web_search: true,
+            llm_type: 'chat_gpt', model_name: 'gpt-4o', user_prompt: llmPrompt, web_search: true,
+          }]),
+          dfs('content_analysis/ai_optimization/llm_response/live', [{
+            llm_type: 'gemini', model_name: 'gemini-2.0-flash', user_prompt: llmPrompt, web_search: true,
           }]),
         ]);
 
@@ -235,10 +232,10 @@
         renderPrompts('chatgpt', chatgptMentions);
         renderPrompts('gemini', geminiMentions);
         renderAIOCard(aio);
-        renderChatGPTCard(chatgptAgg, chatgptMentions);
-        renderGeminiCard(geminiAgg, geminiMentions);
-        renderPerplexityCard(perplexity, domain);
-        renderPerplexityResponse(perplexity);
+        renderLLMCard('ChatGPT', 'statusChatGPT', 'detailChatGPT', chatgptLive, chatgptMentions, domain);
+        renderLLMCard('Gemini', 'statusGemini', 'detailGemini', geminiLive, geminiMentions, domain);
+        renderLLMCard('Perplexity', 'statusPerplexity', 'detailPerplexity', perplexity, null, domain);
+        renderLLMResponses(chatgptLive, geminiLive, perplexity);
         results.style.display = 'block';
       } catch (err) {
         errorMsg.textContent = 'Error: ' + err.message;
@@ -306,6 +303,14 @@
       });
     }
 
+    function getLLMText(result) {
+      if (result.status !== 'fulfilled') return '';
+      try {
+        const item = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
+        return item?.sections?.[0]?.text || item?.response_text || item?.text || '';
+      } catch { return ''; }
+    }
+
     function renderAIOCard(result) {
       const s = document.getElementById('statusAIO');
       const d = document.getElementById('detailAIO');
@@ -314,45 +319,44 @@
       else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No AI Overview appearances'; }
     }
 
-    function renderChatGPTCard(aggResult, mentionsResult) {
-      const s = document.getElementById('statusChatGPT');
-      const d = document.getElementById('detailChatGPT');
-      const items = getItems(mentionsResult);
-      let total = items.length;
-      try { total = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.total_count || total; } catch {}
-      if (total > 0) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = total + ' prompt' + (total !== 1 ? 's' : '') + ' mention this domain'; }
-      else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No ChatGPT mentions found'; }
+    function renderLLMCard(name, statusId, detailId, liveResult, mentionsResult, domain) {
+      const s = document.getElementById(statusId);
+      const d = document.getElementById(detailId);
+      // Check live response first
+      const text = getLLMText(liveResult);
+      const mentioned = text.toLowerCase().includes(domain.toLowerCase());
+      // Also check mentions database
+      const mentionItems = mentionsResult ? getItems(mentionsResult) : [];
+      if (mentioned) {
+        s.textContent = 'Visible'; s.className = 'status visible';
+        if (mentionItems.length > 0) { d.textContent = mentionItems.length + ' prompts mention this domain'; }
+        else { d.textContent = 'Domain mentioned in response'; }
+      } else if (mentionItems.length > 0) {
+        s.textContent = 'Visible'; s.className = 'status visible';
+        d.textContent = mentionItems.length + ' prompts mention this domain';
+      } else {
+        s.textContent = 'Not Found'; s.className = 'status not-visible';
+        d.textContent = 'No ' + name + ' mentions found';
+      }
     }
 
-    function renderGeminiCard(aggResult, mentionsResult) {
-      const s = document.getElementById('statusGemini');
-      const d = document.getElementById('detailGemini');
-      const items = getItems(mentionsResult);
-      let total = items.length;
-      try { total = aggResult.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.total_count || total; } catch {}
-      if (total > 0) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = total + ' prompt' + (total !== 1 ? 's' : '') + ' mention this domain'; }
-      else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'No Gemini mentions found'; }
-    }
-
-    function renderPerplexityCard(result, domain) {
-      const s = document.getElementById('statusPerplexity');
-      const d = document.getElementById('detailPerplexity');
-      if (result.status !== 'fulfilled') { s.textContent = 'Error'; s.className = 'status not-visible'; d.textContent = 'Could not check'; return; }
-      try {
-        const resp = result.value?.tasks?.[0]?.result?.[0]?.items?.[0];
-        const text = resp?.response_text || resp?.text || '';
-        if (text.toLowerCase().includes(domain.toLowerCase())) { s.textContent = 'Visible'; s.className = 'status visible'; d.textContent = 'Domain mentioned in response'; }
-        else { s.textContent = 'Not Found'; s.className = 'status not-visible'; d.textContent = 'Domain not in response'; }
-      } catch { s.textContent = 'Unknown'; s.className = 'status not-visible'; d.textContent = 'Could not parse response'; }
-    }
-
-    function renderPerplexityResponse(result) {
+    function renderLLMResponses(chatgpt, gemini, perplexity) {
       const c = document.getElementById('perplexityResponse');
-      if (result.status !== 'fulfilled') { c.innerHTML = '<div class="empty-state">Could not retrieve Perplexity response.</div>'; return; }
-      try {
-        const text = result.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.response_text || result.value?.tasks?.[0]?.result?.[0]?.items?.[0]?.text || 'No response received.';
-        c.innerHTML = '<div style="background:#0f172a;padding:20px;border-radius:10px;border:1px solid #334155;white-space:pre-wrap;">' + esc(text) + '</div>';
-      } catch { c.innerHTML = '<div class="empty-state">Could not parse Perplexity response.</div>'; }
+      let html = '';
+      const responses = [
+        { name: 'ChatGPT', result: chatgpt, color: '#34d399' },
+        { name: 'Gemini', result: gemini, color: '#60a5fa' },
+        { name: 'Perplexity', result: perplexity, color: '#a78bfa' },
+      ];
+      responses.forEach(r => {
+        const text = getLLMText(r.result);
+        if (text) {
+          html += '<div style="margin-bottom:16px;"><div style="font-weight:600;color:' + r.color + ';margin-bottom:8px;">' + r.name + ' Response</div><div style="background:#0f172a;padding:20px;border-radius:10px;border:1px solid #334155;white-space:pre-wrap;">' + esc(text) + '</div></div>';
+        } else {
+          html += '<div style="margin-bottom:16px;"><div style="font-weight:600;color:' + r.color + ';margin-bottom:8px;">' + r.name + ' Response</div><div class="empty-state">No response received.</div></div>';
+        }
+      });
+      c.innerHTML = html;
     }
   </script>
 </body>
